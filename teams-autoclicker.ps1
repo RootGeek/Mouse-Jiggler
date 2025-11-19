@@ -1,0 +1,82 @@
+$signature = @"
+using System;
+using System.Runtime.InteropServices;
+using System.Windows.Forms;
+
+public class HotKey
+{
+    [DllImport("user32.dll")]
+    public static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
+
+    [DllImport("user32.dll")]
+    public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+
+    [DllImport("user32.dll")]
+    public static extern bool PeekMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin,
+        uint wMsgFilterMax, uint wRemoveMsg);
+
+    public const int WM_HOTKEY = 0x0312;
+    public const int PM_REMOVE = 0x0001;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MSG
+    {
+        public IntPtr hwnd;
+        public uint message;
+        public IntPtr wParam;
+        public IntPtr lParam;
+        public uint time;
+        public int pt_x;
+        public int pt_y;
+    }
+}
+
+public class Clicker
+{
+    [DllImport("user32.dll")]
+    public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
+}
+"@
+
+Add-Type -TypeDefinition $signature -ReferencedAssemblies System.Windows.Forms
+
+$WM_HOTKEY = [HotKey]::WM_HOTKEY
+$PM_REMOVE = [HotKey]::PM_REMOVE
+
+# F1 registrieren (ohne Modifier)
+$hotkeyId = 1
+[HotKey]::RegisterHotKey([IntPtr]::Zero, $hotkeyId, 0, [System.Windows.Forms.Keys]::F1) | Out-Null
+
+Write-Host "Auto-Klicker bereit. Drücke F1 zum Start/Stop, Strg+C beendet."
+
+$running = $false
+
+try {
+    while ($true) {
+        $msg = New-Object HotKey+MSG
+
+        while ([HotKey]::PeekMessage([ref]$msg, [IntPtr]::Zero, $WM_HOTKEY, $WM_HOTKEY, $PM_REMOVE)) {
+            if ($msg.message -eq $WM_HOTKEY -and $msg.wParam -eq [IntPtr]$hotkeyId) {
+                $running = -not $running
+                Clear-Host
+                if ($running) {
+                    Write-Host "Auto-Klick AKTIV (alle 5 Sekunden) - erneut F1 zum Stoppen."
+                } else {
+                    Write-Host "Auto-Klick PAUSIERT."
+                }
+            }
+        }
+
+        if ($running) {
+            [Clicker]::mouse_event(0x0002, 0, 0, 0, 0)  # down
+            [Clicker]::mouse_event(0x0004, 0, 0, 0, 0)  # up
+            Start-Sleep -Seconds 5
+        } else {
+            Start-Sleep -Milliseconds 200
+        }
+    }
+}
+finally {
+    [HotKey]::UnregisterHotKey([IntPtr]::Zero, $hotkeyId) | Out-Null
+    Write-Host "Hotkey wieder freigegeben."
+}
